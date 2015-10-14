@@ -5,9 +5,7 @@ import scala.io._
 import java.io._
 
 /**
- * Handling scala REPL process
- * @author howard@lunatech.com
- * @version 14/10/15
+ * scala REPL process
  */
 
 object REPLproc {
