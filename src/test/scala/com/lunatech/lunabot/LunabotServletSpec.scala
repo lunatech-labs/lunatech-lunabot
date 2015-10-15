@@ -9,7 +9,12 @@ class LunabotServletSpec extends ScalatraSpec {
       "should return status 200" ! root200 ^
       end
 
-  addServlet(classOf[LunabotServlet], "/*")
+  
+  val servlet = new LunabotServlet {
+    override lazy val lunabotSettingsFilepath = "path_for_test"
+  }
+
+  addServlet(servlet, "/*")
 
   def root200 = get("/") {
     //page exists
