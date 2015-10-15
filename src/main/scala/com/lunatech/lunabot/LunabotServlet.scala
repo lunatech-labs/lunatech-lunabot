@@ -40,9 +40,8 @@ class LunabotServlet extends ScalatraServlet with JacksonJsonSupport {
     val urlStr = "https://api.hipchat.com/v2/room/roomId/notification?auth_token="
 
     val executionFuture: Future[String] = Future {
-      val cmd1: String = hipchatMsg.item.message.message.replace("/scala", "")
-      val output: Seq[String] = Seq("scala", "-e", cmd1)
-      output.!!
+      val cmd1: String = hipchatMsg.item.message.message.replace("/scala ", "")
+      REPLproc.run(cmd1)
     }
 
     executionFuture.onComplete {
