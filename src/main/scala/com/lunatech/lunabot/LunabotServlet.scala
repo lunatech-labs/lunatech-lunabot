@@ -12,6 +12,7 @@ import scala.util.{Failure, Success}
 import org.json4s._
 import org.json4s.JsonDSL._
 import com.typesafe.config.ConfigFactory
+import java.io.File
 
 /**
  * Application to handle POST requests received from HipChat.
@@ -28,8 +29,8 @@ class LunabotServlet extends ScalatraServlet with JacksonJsonSupport {
   protected implicit val jsonFormats: Formats = DefaultFormats
 
   val logger = LoggerFactory.getLogger(getClass)
-  //load configuration from the resources location (default is application.conf)
-  val configFactory = ConfigFactory.load("application.conf")
+  val lunabotSettingsFilepath = System.getenv("lunabot_settings_filepath")
+  val configFactory = ConfigFactory.parseFile(new File(lunabotSettingsFilepath))
 
   // Before every action runs, set the content type to be in JSON format.
   before() {
@@ -83,7 +84,7 @@ class LunabotServlet extends ScalatraServlet with JacksonJsonSupport {
 
   /*
   * Execute the expression included in the post request and get a Future string with the response
-  * @param scalExpr The expression that is to be evaluated by the repl.
+  * @param scalaExpr The expression that is to be evaluated by the repl.
   * @return A Future String containing the response from the repl.
   * */
   def executeExpression(scalaExpr: String): Future[String] = Future {
