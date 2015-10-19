@@ -4,6 +4,8 @@ import scala.sys.process._
 import scala.io._
 import java.io._
 
+import scala.util.{Failure, Success, Try}
+
 /**
  * scala REPL process
  */
