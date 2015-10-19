@@ -9,11 +9,7 @@ class LunabotServletSpec extends ScalatraSpec {
       "should return status 200" ! root200 ^
       end
 
-  
-  val servlet = new LunabotServlet {
-    override lazy val lunabotSettingsFilepath = "path_for_test"
-  }
-
+  val servlet = new LunabotServlet(Map(1 -> "token"))
   addServlet(servlet, "/*")
 
   def root200 = get("/") {

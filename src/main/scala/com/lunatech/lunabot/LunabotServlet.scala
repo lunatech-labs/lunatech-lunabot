@@ -1,18 +1,16 @@
 package com.lunatech.lunabot
 
+import java.net.URL
+
 import com.lunatech.lunabot.model._
 import org.scalatra._
 import org.json4s.{DefaultFormats, Formats}
 import org.slf4j.LoggerFactory
-// JSON handling support from Scalatra
 import org.scalatra.json._
 import dispatch._, Defaults._
-import scala.util.{Failure, Success}
-// JSON-related libraries
+import scala.util.{Failure, Success, Try}
 import org.json4s._
 import org.json4s.JsonDSL._
-import com.typesafe.config.ConfigFactory
-import java.io.File
 
 /**
  * Application to handle POST requests received from HipChat.
@@ -22,16 +20,17 @@ import java.io.File
  * Once the response is sent by REPL, an POST request including the
  * scala result is sent to HipChat.
  */
-class LunabotServlet extends ScalatraServlet with JacksonJsonSupport {
+class LunabotServlet(val tokens: Map[Int, String]) extends ScalatraServlet with JacksonJsonSupport {
 
   // Sets up automatic case class to JSON output serialization, required by
   // the JValueResult trait.
   protected implicit val jsonFormats: Formats = DefaultFormats
 
   val logger = LoggerFactory.getLogger(getClass)
-  lazy val lunabotSettingsFilepath = System.getenv("lunabot_settings_filepath")
-  lazy val configFactory = ConfigFactory.parseFile(new File(lunabotSettingsFilepath))
-
+  private val COLOR_PARAM: String = "color"
+  private val MESSAGE_PARAM: String = "message"
+  private val MESSAGE_FORMAT: String =  "message_format"
+  private val NOTIFY_PARAM: String = "notify"
 
   // Before every action runs, set the content type to be in JSON format.
   before() {
@@ -44,28 +43,33 @@ class LunabotServlet extends ScalatraServlet with JacksonJsonSupport {
 
   post("/repl") {
     logger.debug(request.body)
-    val jsonValue = parse(request.body.replace("mention_name", "mentionName"))
-    val hipchatMsg = jsonValue.extract[HipChatMessage]
-    val cmd: String = hipchatMsg.item.message.message.replace("/scala ", "")
 
-    //Send response to HipChat Room.
-    executeExpression(cmd).onComplete {
-      case Success(result) =>
-        val jsonResponse: String = compact(render(("color" -> "green") ~
-          ("message" -> result) ~
-          ("notify" -> false) ~
-          ("message_format" -> "text")))
-        val myRequest: Req = prepareResponse(hipchatMsg) << jsonResponse
-        dispatch.Http(myRequest)
+    val jsonValue: JValue = parse(request.body.replace("mention_name", "mentionName"))
+    val hipChatMessage: HipChatMessage = jsonValue.extract[HipChatMessage]
+    val cmd: String = hipChatMessage.item.message.message.replace("/scala ", "")
 
-      case Failure(ex: Exception) =>
-        val errorResp = compact(render(("color" -> "red") ~
-          ("message" -> s"Sorry your scala code has failed with ${ex.getMessage}") ~
-          ("notify" -> false) ~
-          ("message_format" -> "text")))
-        val myRequest = prepareResponse(hipchatMsg) << errorResp
-        dispatch.Http(myRequest)
+    lazy val futureResponse: Try[JValue] = evaluateExpression(hipChatMessage.item.message.message)
+    val maybeResponse: Option[URL] = responseUrl(hipChatMessage.item.room.id)
+
+    val maybeResult: Either[String, (URL, JValue)] = maybeResponse match {
+      case Some(url) =>
+        futureResponse match {
+          case Success(value) => Right(url, value)
+          case Failure(ex) =>
+            Right(url, responseJValue(s"Sorry your scala code has failed with ${ex.getMessage}", "red"))
+        }
+      case None =>
+        val message: String = s"Unable to find the roken for the room ${hipChatMessage.item.room.id}"
+        logger.warn(message)
+        Left(message)
+
     }
+
+    maybeResult match {
+      case Right((url, jvalue)) => dispatch.Http(constructRequest(url.toString()) << compact(jvalue))
+      case Left(message) => logger.error(message)
+    }
+
   }
 
   /*
@@ -73,21 +77,27 @@ class LunabotServlet extends ScalatraServlet with JacksonJsonSupport {
   * @param hipchatMsg The HipChatMessage object received by the post request to Lunabot
   * @return The request that is about to be sent with the right destination url
   *  */
-  def prepareResponse(hipchatMsg: HipChatMessage): Req = {
-    val roomId = hipchatMsg.item.room.id
-    val authToken = configFactory.getString(s"AUTH_TOKENS.$roomId.token")
-    val urlStr = s"https://api.hipchat.com/v2/room/$roomId/notification?auth_token=$authToken"
-    val myRequest = dispatch.url(urlStr).setContentType("application/json", "UTF-8").POST
-    myRequest
+  def constructRequest(url: String): Req = {
+    dispatch.url(url).setContentType("application/json", "UTF-8").POST
+  }
+  
+  /*
+   * Creates the url where Lunabot sends its POST request
+   * @param hipchatMsg The message that is included in the post request received by Lunabot
+   */
+  private def responseUrl(roomId: Int): Option[URL] = tokens.get(roomId).map {
+    t => new URL(s"https://api.hipchat.com/v2/room/$roomId/notification?auth_token=$t")
   }
 
-  /*
-  * Execute the expression included in the post request and get a Future string with the response
-  * @param scalaExpr The expression that is to be evaluated by the repl.
-  * @return A Future String containing the response from the repl.
-  * */
-  def executeExpression(scalaExpr: String): Future[String] = Future {
-    REPLproc.run(scalaExpr)
+  private def evaluateExpression(expression: String): Try[JValue] = REPLproc.run(expression).map {
+    responseJValue(_, "green")
   }
+
+  def responseJValue(message: String, color: String, notify: Boolean = false, messageFormat: String = "text"): JValue =
+    render((COLOR_PARAM -> color) ~
+      (MESSAGE_PARAM -> message) ~
+      (NOTIFY_PARAM -> false) ~
+      (MESSAGE_FORMAT -> messageFormat))
 
 }
+
