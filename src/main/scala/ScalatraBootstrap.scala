@@ -8,7 +8,7 @@ import scala.collection.JavaConverters._
 
 class ScalatraBootstrap extends LifeCycle {
   override def init(context: ServletContext) {
-
+    // Get the tokens from the env variable.
     val lunabotSettingsFilepath = System.getenv("lunabot_settings_filepath")
     val configFactory: Config = ConfigFactory.parseFile(new File(lunabotSettingsFilepath))
     val authTokens: Seq[Config] = configFactory.getConfigList("AUTH_TOKENS").asScala.toSeq
