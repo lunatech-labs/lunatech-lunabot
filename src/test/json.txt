@@ -10,7 +10,7 @@
             },
             "id": "00a3eb7f-fac5-496a-8d64-a9050c712ca1",
             "mentions": [],
-            "message": "/scala System.currentTimeMillis()",
+            "message": "test /scala",
             "type": "message"
         },
         "room": {

@@ -52,31 +52,41 @@ class LunabotServlet(val tokens: Map[Int, String]) extends ScalatraServlet with 
     val hipChatMessage: HipChatMessage = jsonValue.extract[HipChatMessage]
 
     // Expression to send to the REPL
-    val cmd: String = hipChatMessage.item.message.message.replace("/scala ", "")
-    logger.debug(s"Processing $cmd")
+    val msg: String = hipChatMessage.item.message.message
+    val cmd: Option[String] = if(msg.toLowerCase.startsWith("/scala ")) Some(msg.substring(7)) else None
+      // Hipchat server will send the messages with "/scala" found in any position to us.  This is to filter out those not meant to be a /scala command.
+      // Also check the space after /scala to avoid processing /scala command with no content.
 
-    // Response from the REPL
-    lazy val triedResponse: Try[JValue] = evaluateExpression(cmd)
+    logger.debug("Processing " + cmd.getOrElse("will skip as it's not a scala command"))
 
-    // Prepare POST request
-    val maybeResponse: Option[URL] = responseUrl(hipChatMessage.item.room.id)
-    val maybeResult: Either[String, (URL, JValue)] = maybeResponse match {
-      case Some(url) =>
-        triedResponse match {
-          case Success(value) => Right(url, value)
-          case Failure(ex) =>
-            Right(url, responseJValue(s"Sorry your scala code has failed with ${ex.getMessage}", "red"))
+    cmd match {
+      case Some(cmd) =>
+        // Response from the REPL
+        lazy val triedResponse: Try[JValue] = evaluateExpression(cmd)
+
+        // Prepare POST request
+        val maybeResponse: Option[URL] = responseUrl(hipChatMessage.item.room.id)
+        val maybeResult: Either[String, (URL, JValue)] = maybeResponse match {
+          case Some(url) =>
+            triedResponse match {
+              case Success(value) => Right(url, value)
+              case Failure(ex) =>
+                Right(url, responseJValue(s"Sorry your scala code has failed with ${ex.getMessage}", "red"))
+            }
+          case None =>
+            val message: String = s"Unable to find the token for the room ${hipChatMessage.item.room.id}"
+            Left(message)
         }
-      case None =>
-        val message: String = s"Unable to find the token for the room ${hipChatMessage.item.room.id}"
-        Left(message)
+
+        // Send POST request to HipChat if possible, log error otherwise
+        maybeResult match {
+          case Right((url, jvalue)) => dispatch.Http(constructRequest(url.toString) << compact(jvalue))
+          case Left(message) => logger.error(message)
+        }
+
+      case None =>  logger.error("/scala not found at beginning of mesg.")
     }
 
-    // Send POST request to HipChat if possible, log error otherwise
-    maybeResult match {
-      case Right((url, jvalue)) => dispatch.Http(constructRequest(url.toString) << compact(jvalue))
-      case Left(message) => logger.error(message)
-    }
   }
 
   /**
